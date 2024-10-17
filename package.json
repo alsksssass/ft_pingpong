@@ -1,0 +1,23 @@
+{
+  "name": "3djs",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "vite --port 3000",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "nodemon server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cannon-es": "^0.20.0",
+    "express": "^4.21.0",
+    "socket.io": "^4.8.0",
+    "three": "^0.168.0",
+    "vite": "^5.4.7"
+  },
+  "description": ""
+}
