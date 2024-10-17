@@ -1,22 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
-		<meta charset="utf-8">
-		<title>My first three.js app</title>
-		<link rel="stylesheet" href="styles.css">
-	</head>
-	<body>
-		<script src="/socket.io/socket.io.js"></script>
-		<script type="importmap">
-			{
-			  "imports": {
-				"three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-				"three/examples/jsm/loaders/FontLoader.js": "https://unpkg.com/three@0.160.0/examples/jsm/loaders/FontLoader.js",
-				"three/examples/jsm/geometries/TextGeometry.js": "https://unpkg.com/three@0.160.0/examples/jsm/geometries/TextGeometry.js",
-				"cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
-			  }
-			}
-			</script>
-		<script type="module" src="/main.js"></script>
-	</body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ping Pong Game</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div id="gameContainer"></div>
+    <script src="/socket.io/socket.io.js"></script>
+	<script type="importmap">
+		{
+		  "imports": {
+			"three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+			"three/examples/jsm/loaders/FontLoader.js": "https://unpkg.com/three@0.160.0/examples/jsm/loaders/FontLoader.js",
+			"three/examples/jsm/geometries/TextGeometry.js": "https://unpkg.com/three@0.160.0/examples/jsm/geometries/TextGeometry.js",
+			"cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
+		  }
+		}
+		</script>
+    <script type="module" src="/main.js"></script>
+</body>
 </html>
