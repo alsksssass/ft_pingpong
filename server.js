@@ -1,198 +1,228 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-const CANNON = require('cannon-es');
 const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-// 정적 파일 서빙 설정
-app.use(express.static(path.join(__dirname, 'public')));
-app.use('/three', express.static(path.join(__dirname, 'node_modules/three')));
+const PORT = process.env.PORT || 3000;
 
-// 루트 경로 처리
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Simple vector operations
+class Vec3 {
+    constructor(x = 0, y = 0, z = 0) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+    }
+
+    add(v) {
+        this.x += v.x;
+        this.y += v.y;
+        this.z += v.z;
+        return this;
+    }
+
+    scale(s) {
+        this.x *= s;
+        this.y *= s;
+        this.z *= s;
+        return this;
+    }
+
+    length() {
+        return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
+    }
+
+    normalize() {
+        const len = this.length();
+        if (len > 0) {
+            this.scale(1 / len);
+        }
+        return this;
+    }
+}
+
+// Game constants
+const GAME_WIDTH = 100;
+const GAME_LENGTH = 250;
+const CONSTANT_BALL_SPEED = 80;
 
 class PingPongServer {
     constructor() {
-        this.world = new CANNON.World();
-        this.world.gravity.set(0, -9.82, 0);
+        this.gameState = {
+            oneName: 'sabyun',
+            twoName: 'ai',
+            playerOne: { x: 0, y: 6, z: 100 },
+            playerTwo: { x: 0, y: 6, z: -100 },
+            ball: { x: 0, y: 6, z: 0 },
+            ballVelocity: new Vec3(0, CONSTANT_BALL_SPEED, 0),
+            ballSummunDriction: true,
+            score: { playerOne: 0, playerTwo: 0 },
+            // table: {
+            //     width: GAME_WIDTH,
+            //     length: GAME_LENGTH,
+            //     height: 5,
+            //     color: 0x1a5c1a // Green color for the table
+            // },
+            // guidelines: {
+            //     width: 1,
+            //     height: 10,
+            //     length: GAME_LENGTH,
+            //     color: 0x0000ff, // Blue color for guidelines
+            //     positions: [
+            //         { x: -GAME_WIDTH/2, y: 5, z: 0 },
+            //         { x: GAME_WIDTH/2, y: 5, z: 0 }
+            //     ]
+            // },
+            // net: {
+            //     width: GAME_WIDTH,
+            //     height: 6,
+            //     depth: 1,
+            //     color: 0xffffff, // Blue color for the net
+            //     position: { x: 0, y: 5, z: 0 }
+            // }
+        };
 
-        this.gameWidth = 100;
-        this.gameLenth = 250;
-        this.constantBallSpeed = 80;
-
-        this.playerOne = this.createPaddle(0, 6, 100);
-        this.playerTwo = this.createPaddle(0, 6, -100);
-        this.ball = this.createBall();
-
-        this.createTable();
-
-        this.setupCollisionEvents();
-
-        this.score = { playerOne: 0, playerTwo: 0 };
-
+        this.clients = new Map();
         setInterval(() => this.updatePhysics(), 1000 / 60);
     }
 
-    createPaddle(x, y, z) {
-        const paddleShape = new CANNON.Box(new CANNON.Vec3(10, 2.5, 2.5));
-        const paddleBody = new CANNON.Body({
-            mass: 0,
-            shape: paddleShape,
-            position: new CANNON.Vec3(x, y, z)
-        });
-        this.world.addBody(paddleBody);
-        return paddleBody;
-    }
+    setBallVelocity() {
+        // 60도를 라디안으로 변환 (π/3)
+        const maxAngle = Math.PI / 3;
 
-    createBall() {
-        const ballShape = new CANNON.Sphere(2);
-        const ballBody = new CANNON.Body({
-            mass: 1,
-            shape: ballShape,
-            position: new CANNON.Vec3(0, 6, 0),
-            velocity: new CANNON.Vec3(this.constantBallSpeed, 0, 0)
-        });
-        this.world.addBody(ballBody);
-        return ballBody;
-    }
+        // -60도에서 60도 사이의 랜덤한 각도 생성
+        const angle = (Math.random() * 2 - 1) * maxAngle;
 
-    createTable() {
-        const tableShape = new CANNON.Box(new CANNON.Vec3(this.gameWidth/2, 2.5, this.gameLenth/2));
-        const tableBody = new CANNON.Body({
-            mass: 0,
-            shape: tableShape,
-            position: new CANNON.Vec3(0, 0, 0)
-        });
-        this.world.addBody(tableBody);
-    }
-
-    setupCollisionEvents() {
-        this.world.addEventListener('postStep', () => {
-            if (this.checkCollision(this.ball, this.playerOne)) {
-                this.adjustBallVelocityAfterPaddleHit(this.ball, this.playerOne);
-            } else if (this.checkCollision(this.ball, this.playerTwo)) {
-                this.adjustBallVelocityAfterPaddleHit(this.ball, this.playerTwo);
-            }
-        });
-    }
-
-    checkCollision(ball, paddle) {
-        const distance = ball.position.distanceTo(paddle.position);
-        return distance < (ball.shapes[0].radius + paddle.shapes[0].halfExtents.x);
-    }
-
-    adjustBallVelocityAfterPaddleHit(ball, paddle) {
-        const velocity = ball.velocity;
-        const speed = velocity.length();
-
-        // 공의 현재 위치와 패들의 중심 사이의 차이 계산
-        const paddleCenterX = paddle.position.x;
-        const hitPointDiff = ball.position.x - paddleCenterX;
-
-        // 반사 각도 계산 (패들의 어느 부분에 맞았는지에 따라 달라짐)
-        const maxBounceAngle = Math.PI / 3; // 60도
-        const bounceAngle = (hitPointDiff / paddle.shapes[0].halfExtents.x) * maxBounceAngle;
-
-        // 새로운 속도 계산
-        const direction = (ball.position.z < paddle.position.z) ? -1 : 1; // 공이 어느 방향으로 가야 하는지 결정
-        const newVelocityX = Math.sin(bounceAngle) * speed;
-        const newVelocityZ = Math.cos(bounceAngle) * speed * direction;
+        // 50% 확률로 왼쪽 또는 오른쪽으로 발사
+        const direction = this.gameState.ballSummunDriction;
+        // x와 z 방향의 속도 계산
+        const vx = Math.sin(angle) * CONSTANT_BALL_SPEED;
+        const vz = Math.cos(angle) * CONSTANT_BALL_SPEED * direction;
+        const vy = 0;  // 수직 속도 제거
 
         // 속도 설정
-        velocity.x = newVelocityX;
-        velocity.z = newVelocityZ;
-        velocity.y = Math.min(velocity.y, 0); // y 속도를 아래로 제한
-
-        // 일정 속도 유지
-        velocity.normalize();
-        velocity.scale(this.constantBallSpeed, velocity);
-
-        ball.velocity.copy(velocity);
+        this.gameState.ballVelocity.x = vx;
+        this.gameState.ballVelocity.y = vy;
+        this.gameState.ballVelocity.z = vz;
     }
 
     updatePhysics() {
-        this.world.step(1/60);
-        this.maintainConstantVelocity();
-        this.checkBoundaries();
+        const { ball, ballVelocity } = this.gameState;
+
+        // Update ball position
+        ball.x += ballVelocity.x * (1/60);
+        ball.y += ballVelocity.y * (1/60);
+        ball.z += ballVelocity.z * (1/60);
+
+        // Check collisions with paddles
+        this.checkPaddleCollision(this.gameState.playerOne);
+        this.checkPaddleCollision(this.gameState.playerTwo);
+
+        // Check wall collisions
+        if (Math.abs(ball.x) > GAME_WIDTH/2 - 2) {
+            ballVelocity.x *= -1;
+        }
+
+        // Check scoring
+        if (Math.abs(ball.z) > GAME_LENGTH/2 || ball.y < 0 || ball.y > 20) {
+            if (ball.z > 0) {
+                this.gameState.score.playerTwo++;
+                this.gameState.ballSummunDriction = 1;
+            } else {
+                this.gameState.score.playerOne++;
+                this.gameState.ballSummunDriction = 1;
+            }
+            io.emit('score', this.gameState);
+            this.resetBall();
+        }
+
+        // Broadcast updated game state
         this.broadcastGameState();
     }
 
-    maintainConstantVelocity() {
-        const velocity = this.ball.velocity;
-        const currentSpeed = velocity.length();
-        if (currentSpeed > 0 && isFinite(currentSpeed)) {
-            const scaleFactor = this.constantBallSpeed / currentSpeed;
-            velocity.scale(scaleFactor, velocity);
-            this.ball.velocity.copy(velocity);
-        }
-    }
+    checkPaddleCollision(paddle) {
+        const { ball, ballVelocity } = this.gameState;
+        const dx = ball.x - paddle.x;
+        const dy = ball.y - paddle.y;
+        const dz = ball.z - paddle.z;
+        const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
 
-    checkBoundaries() {
-        if (Math.abs(this.ball.position.z) > this.gameLenth/2) {
-            if (this.ball.position.z > 0) {
-                this.score.playerTwo++;
-            } else {
-                this.score.playerOne++;
-            }
-            this.resetBall();
+        if (distance < 9) { // Paddle width (20) / 2 + ball radius (2)
+            const hitPointDiff = ball.x - paddle.x;
+            const maxBounceAngle = Math.PI / 3; // 60 degrees
+            const bounceAngle = (hitPointDiff / 10) * maxBounceAngle;
+
+            const speed = new Vec3(ballVelocity.x, ballVelocity.y, ballVelocity.z).length();
+            const direction = (ball.z < paddle.z) ? -1 : 1;
+
+            ballVelocity.x = Math.sin(bounceAngle) * speed;
+            ballVelocity.z = Math.cos(bounceAngle) * speed * direction;
+            ballVelocity.y = Math.min(ballVelocity.y, 0);
+
+            // Normalize and scale to constant speed
+            new Vec3(ballVelocity.x, ballVelocity.y, ballVelocity.z)
+                .normalize()
+                .scale(CONSTANT_BALL_SPEED);
         }
     }
 
     resetBall() {
-        this.ball.position.set(0, 6, 0);
-        this.ball.velocity.set(
-            (Math.random() - 0.5) * this.constantBallSpeed,
-            0,
-            (Math.random() < 0.5 ? 1 : -1) * this.constantBallSpeed
-        );
+        const { ball, ballVelocity } = this.gameState;
+        ball.x = 0;
+        ball.y = 5;
+        ball.z = 0;
+        ballVelocity.x = (Math.random() - 0.5) * CONSTANT_BALL_SPEED;
+        ballVelocity.y = 0;
+        ballVelocity.z = (Math.random() < 0.5 ? 1 : -1) * CONSTANT_BALL_SPEED;
+        this.setBallVelocity();
     }
-
     broadcastGameState() {
-        const gameState = {
-            playerOne: this.playerOne.position,
-            playerTwo: this.playerTwo.position,
-            ball: this.ball.position,
-            score: this.score
-        };
-        io.emit('gameState', gameState);
+        io.emit('gameState', this.gameState);
     }
 
     handlePlayerInput(playerId, key, pressed) {
-        const player = playerId === 1 ? this.playerOne : this.playerTwo;
+        const player = playerId === Array.from(this.clients.keys())[0] ? this.gameState.playerOne : this.gameState.playerTwo;
         const moveSpeed = 2;
 
         if (key === 'A' && pressed) {
-            player.position.x -= moveSpeed;
+            player.x -= moveSpeed;
         } else if (key === 'D' && pressed) {
-            player.position.x += moveSpeed;
+            player.x += moveSpeed;
         }
 
-        // 패들이 테이블 밖으로 나가지 않도록 제한
-        player.position.x = Math.max(-this.gameWidth/2 + 10, Math.min(this.gameWidth/2 - 10, player.position.x));
+        // Limit paddle movement
+        player.x = Math.max(-GAME_WIDTH/2 + 10, Math.min(GAME_WIDTH/2 - 10, player.x));
     }
 }
 
 const game = new PingPongServer();
 
 io.on('connection', (socket) => {
-    console.log('A user connected');
+    console.log('New client connected:', socket.id);
+    game.clients.set(socket.id, socket);
+    if(game.clients.size > 1){
+        io.to(socket.id).emit('secondPlayer');
+        console.log(game.clients.size);
+    }
+    // Send initial game state to the new client
+    socket.emit('gameState', game.gameState);
 
     socket.on('keyPress', (data) => {
         game.handlePlayerInput(socket.id, data.key, data.pressed);
     });
 
     socket.on('disconnect', () => {
-        console.log('User disconnected');
+        console.log('Client disconnected:', socket.id);
+        game.clients.delete(socket.id);
     });
 });
 
-const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });

@@ -15,6 +15,12 @@ class PingPongClient {
         this.gameLenth = 250;
         this.initColor = [0xffffff, 0xff0000, 0x000000, 0x0000cc];
 
+        //두번째 플레이어 확인
+        this.secondPlayer = false;
+        
+        // 텍스트
+        this.textdata = 0;
+
         // 마우스 이벤트 관련 변수
         this.isDragging = false;
         this.previousMousePosition = {
@@ -25,7 +31,7 @@ class PingPongClient {
         this.camSetPosition = true;
         this.cameraRadius = 200;
         this.cameraTheta = 1.56;
-        this.cameraPhi = 0.1;
+        this.cameraPhi = 1.03;
         this.cameraTarget = new THREE.Vector3(0, 0, 0);
         this.updateCameraPosition();
 
@@ -38,6 +44,7 @@ class PingPongClient {
         this.ball = this.createBall();
         this.makeTable();
         this.makeLine();
+        this.makeGuideLines();
 
         this.animate = this.animate.bind(this);
         this.animate();
@@ -52,6 +59,34 @@ class PingPongClient {
         document.body.appendChild(newDiv);
     }
 
+    makeFont(msg) {
+        if (this.textdata)
+            this.scene.remove(this.textdata);
+        const loader = new FontLoader();
+        loader.load(
+            'https://threejs.org/examples/fonts/helvetiker_regular.typeface.json',
+            (font) => {
+                const textGeo = new TextGeometry(msg, {
+                    font: font,
+                    size: 10,
+                    height: 1,
+                    curveSegments: 1,
+                    bevelEnabled: true,
+                    bevelThickness: 1,
+                    bevelSize: 0.1,
+                    bevelOffset: 0.1,
+                    bevelSegments: 1
+                });
+                const material = new THREE.MeshPhongMaterial({ color: 0xffffff });
+                const textMesh = new THREE.Mesh(textGeo, material);
+                textMesh.position.set(-40, 50, 10);
+                if (this.camSetPosition)
+                    textMesh.rotateX(30);
+                this.scene.add(textMesh);
+                this.textdata = textMesh;
+            }
+        );
+    }
     setupLights() {
         const ambientLight = new THREE.AmbientLight(0xffffff, 1);
         this.scene.add(ambientLight);
@@ -64,19 +99,29 @@ class PingPongClient {
     setupEventListeners() {
         window.addEventListener('keydown', this.onKeyDown.bind(this), false);
         window.addEventListener('keyup', this.onKeyUp.bind(this), false);
+        this.renderer.domElement.addEventListener('mousedown', this.onMouseDown.bind(this), false);
+        this.renderer.domElement.addEventListener('mousemove', this.onMouseMove.bind(this), false);
+        this.renderer.domElement.addEventListener('mouseup', this.onMouseUp.bind(this), false);
+        window.addEventListener('resize', this.onWindowResize.bind(this), false);
     }
 
     onKeyDown(event) {
         const key = event.key.toUpperCase();
-        if (key === 'A' || key === 'D') {
+        if (!this.secondPlayer && (key === 'A' || key === 'D')) {
             socket.emit('keyPress', { key: key, pressed: true });
+        }
+        else if(this.secondPlayer && (key === 'A' || key === 'D')) {
+            socket.emit('keyPress', { key: key === 'A' ? 'D':'A', pressed: true });
         }
     }
 
     onKeyUp(event) {
         const key = event.key.toUpperCase();
-        if (key === 'A' || key === 'D') {
+        if (!this.secondPlayer && (key === 'A' || key === 'D')) {
             socket.emit('keyPress', { key: key, pressed: false });
+        }
+        else if(this.secondPlayer && (key === 'A' || key === 'D')) {
+            socket.emit('keyPress', { key: key === 'A' ? 'D':'A', pressed: false });
         }
     }
 
@@ -109,6 +154,7 @@ class PingPongClient {
     }
 
     rotateCamera(deltaMove) {
+        console.log(this.cameraPhi, this.cameraRadius, this.cameraTheta);
         this.cameraTheta -= deltaMove.x * 0.01;
         this.cameraPhi -= deltaMove.y * 0.01;
         this.cameraPhi = Math.max(0.1, Math.min(Math.PI - 0.1, this.cameraPhi));
@@ -118,9 +164,15 @@ class PingPongClient {
         this.camera.position.x = this.cameraRadius * Math.sin(this.cameraPhi) * Math.cos(this.cameraTheta);
         this.camera.position.y = this.cameraRadius * Math.cos(this.cameraPhi);
         this.camera.position.z = this.cameraRadius * Math.sin(this.cameraPhi) * Math.sin(this.cameraTheta);
-        // console.log(this.camera.position);
         this.camera.lookAt(this.cameraTarget);
     }
+
+    onWindowResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
     createBall() {
         const ballGeometry = new THREE.SphereGeometry(2, 32, 32);
         const ballMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff });
@@ -152,6 +204,19 @@ class PingPongClient {
         this.scene.add(line);
     }
 
+    makeGuideLines() {
+        const guideGeometry = new THREE.BoxGeometry(1, 10, this.gameLenth);
+        const guideMaterial = new THREE.MeshPhongMaterial({ color: 0x0000ff });
+        
+        this.leftGuide = new THREE.Mesh(guideGeometry, guideMaterial);
+        this.leftGuide.position.set(-this.gameWidth/2, 5, 0);
+        this.scene.add(this.leftGuide);
+
+        this.rightGuide = new THREE.Mesh(guideGeometry, guideMaterial);
+        this.rightGuide.position.set(this.gameWidth/2, 5, 0);
+        this.scene.add(this.rightGuide);
+    }
+
     updateGameState(gameState) {
         this.playerOne.position.set(gameState.playerOne.x, gameState.playerOne.y, gameState.playerOne.z);
         this.playerTwo.position.set(gameState.playerTwo.x, gameState.playerTwo.y, gameState.playerTwo.z);
@@ -171,3 +236,15 @@ class PingPongClient {
 }
 
 const game = new PingPongClient();
+
+socket.on('secondPlayer', (gameState)=> {
+    game.secondPlayer = true;
+    game.cameraTheta = -game.cameraTheta;
+    game.updateCameraPosition();
+    game.playerOne.material.color.setHex(game.initColor[0]);
+    game.playerTwo.material.color.setHex(game.initColor[1]);
+});
+
+socket.on('score',(gameState)=>{
+    game.makeFont(game.secondPlayer ? `${gameState.oneName} ${gameState.score.playerOne} : ${gameState.score.playerTwo} ${gameState.twoName}`: `${gameState.twoName} ${gameState.score.playerTwo} : ${gameState.score.playerOne} ${gameState.oneName}`);
+});
