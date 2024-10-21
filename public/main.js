@@ -5,21 +5,21 @@ import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 const socket = io();
 
 class PingPongClient {
-    constructor() {
+    constructor(remoteOption) {
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.renderer = new THREE.WebGLRenderer();
         this.renderer.setSize(800, 800);
-
+        this.remotePlay = remoteOption;
         this.gameWidth = 100;
         this.gameLenth = 250;
-        this.initColor = [0xffffff, 0xff0000, 0x000000, 0x0000cc];
+        this.initColor = [0xffffff, 0xff0000, 0x000000, 0x0000cc]
 
         //두번째 플레이어 확인
         this.secondPlayer = false;
         
         // 텍스트
-        this.textdata = 0;
+        this.textdata = null;
 
         // 마우스 이벤트 관련 변수
         this.isDragging = false;
@@ -79,9 +79,7 @@ class PingPongClient {
                 });
                 const material = new THREE.MeshPhongMaterial({ color: 0xffffff });
                 const textMesh = new THREE.Mesh(textGeo, material);
-                textMesh.position.set(-40, 50, 10);
-                if (this.camSetPosition)
-                    textMesh.rotateX(30);
+                textMesh.position.set(-20, 50, 0);
                 this.scene.add(textMesh);
                 this.textdata = textMesh;
             }
@@ -231,11 +229,13 @@ class PingPongClient {
 
     animate() {
         requestAnimationFrame(this.animate);
+        if(this.textdata)
+            this.textdata.lookAt(this.camera.position);
         this.renderer.render(this.scene, this.camera);
     }
 }
 
-const game = new PingPongClient();
+const game = new PingPongClient(true);
 
 socket.on('secondPlayer', (gameState)=> {
     game.secondPlayer = true;
@@ -246,5 +246,5 @@ socket.on('secondPlayer', (gameState)=> {
 });
 
 socket.on('score',(gameState)=>{
-    game.makeFont(game.secondPlayer ? `${gameState.oneName} ${gameState.score.playerOne} : ${gameState.score.playerTwo} ${gameState.twoName}`: `${gameState.twoName} ${gameState.score.playerTwo} : ${gameState.score.playerOne} ${gameState.oneName}`);
+    game.makeFont(!game.secondPlayer ? `${gameState.oneName} ${gameState.score.playerOne} : ${gameState.score.playerTwo} ${gameState.twoName}`: `${gameState.twoName} ${gameState.score.playerTwo} : ${gameState.score.playerOne} ${gameState.oneName}`);
 });

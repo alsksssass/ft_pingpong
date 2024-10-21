@@ -50,7 +50,7 @@ class Vec3 {
 // Game constants
 const GAME_WIDTH = 100;
 const GAME_LENGTH = 250;
-const CONSTANT_BALL_SPEED = 80;
+const CONSTANT_BALL_SPEED = 50;
 
 class PingPongServer {
     constructor() {
@@ -63,29 +63,6 @@ class PingPongServer {
             ballVelocity: new Vec3(0, CONSTANT_BALL_SPEED, 0),
             ballSummunDriction: true,
             score: { playerOne: 0, playerTwo: 0 },
-            // table: {
-            //     width: GAME_WIDTH,
-            //     length: GAME_LENGTH,
-            //     height: 5,
-            //     color: 0x1a5c1a // Green color for the table
-            // },
-            // guidelines: {
-            //     width: 1,
-            //     height: 10,
-            //     length: GAME_LENGTH,
-            //     color: 0x0000ff, // Blue color for guidelines
-            //     positions: [
-            //         { x: -GAME_WIDTH/2, y: 5, z: 0 },
-            //         { x: GAME_WIDTH/2, y: 5, z: 0 }
-            //     ]
-            // },
-            // net: {
-            //     width: GAME_WIDTH,
-            //     height: 6,
-            //     depth: 1,
-            //     color: 0xffffff, // Blue color for the net
-            //     position: { x: 0, y: 5, z: 0 }
-            // }
         };
 
         this.clients = new Map();
@@ -165,10 +142,10 @@ class PingPongServer {
             ballVelocity.z = Math.cos(bounceAngle) * speed * direction;
             ballVelocity.y = Math.min(ballVelocity.y, 0);
 
-            // Normalize and scale to constant speed
-            new Vec3(ballVelocity.x, ballVelocity.y, ballVelocity.z)
-                .normalize()
-                .scale(CONSTANT_BALL_SPEED);
+            // // Normalize and scale to constant speed
+            // new Vec3(ballVelocity.x, ballVelocity.y, ballVelocity.z)
+            //     .normalize()
+            //     .scale(CONSTANT_BALL_SPEED);
         }
     }
 
