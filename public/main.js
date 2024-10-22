@@ -14,7 +14,7 @@ class PingPongClient {
         this.gameWidth = 100;
         this.gameLenth = 250;
         this.initColor = [0xffffff, 0xff0000, 0x000000, 0x0000cc]
-
+        this.gameStart = false;
         //두번째 플레이어 확인
         this.secondPlayer = false;
         
@@ -35,6 +35,7 @@ class PingPongClient {
         this.cameraTarget = new THREE.Vector3(0, 0, 0);
         this.updateCameraPosition();
 
+        this.waitingMsg;
         this.makeWindow();
         this.setupLights();
         this.setupEventListeners();
@@ -45,10 +46,8 @@ class PingPongClient {
         this.makeTable();
         this.makeLine();
         this.makeGuideLines();
-
         this.animate = this.animate.bind(this);
         this.animate();
-
         this.setupSocketListeners();
     }
 
@@ -58,10 +57,8 @@ class PingPongClient {
         newDiv.appendChild(this.renderer.domElement);
         document.body.appendChild(newDiv);
     }
+    makeFont(msg,x,y,z) {
 
-    makeFont(msg) {
-        if (this.textdata)
-            this.scene.remove(this.textdata);
         const loader = new FontLoader();
         loader.load(
             'https://threejs.org/examples/fonts/helvetiker_regular.typeface.json',
@@ -79,12 +76,28 @@ class PingPongClient {
                 });
                 const material = new THREE.MeshPhongMaterial({ color: 0xffffff });
                 const textMesh = new THREE.Mesh(textGeo, material);
-                textMesh.position.set(-20, 50, 0);
+                textMesh.position.set(x, y, z);
+                // textMesh.lookAt(this.camera.position); // 카메라를 향하도록 설정
                 this.scene.add(textMesh);
-                this.textdata = textMesh;
+                return textMesh;
             }
         );
     }
+    
+    createText(txt,x,y,z,op){
+        const temp = this.makeFont(txt,x,y,z);
+        if(!op){
+            if (this.textdata) {
+                // 기존 텍스트 지오메트리 삭제 및 업데이트
+                this.scene.remove(this.textdata); // 씬에서 텍스트 제거
+                this.textdata.geometry.dispose();  // geometry 메모리 해제
+                this.textdata.material.dispose();  // material 메모리 해제
+                this.textdata = null;
+            }
+            this.textdata = temp;
+        }
+    }
+    
     setupLights() {
         const ambientLight = new THREE.AmbientLight(0xffffff, 1);
         this.scene.add(ambientLight);
@@ -109,7 +122,7 @@ class PingPongClient {
             socket.emit('keyPress', { key: key, pressed: true });
         }
         else if(this.secondPlayer && (key === 'A' || key === 'D')) {
-            socket.emit('keyPress', { key: key === 'A' ? 'D':'A', pressed: true });
+            socket.emit('keyPress', { key: key === 'A' ? 'D':'A', pressed: true })
         }
     }
 
@@ -229,8 +242,14 @@ class PingPongClient {
 
     animate() {
         requestAnimationFrame(this.animate);
-        if(this.textdata)
-            this.textdata.lookAt(this.camera.position);
+        console.log(this.gameStart);
+        if(this.gameStart === true){
+            if(this.textdata){
+                this.textdata.lookAt(this.camera.position);
+            }
+        }
+        else
+            this.makeFont('waiting for player!',-40,50,0,false);
         this.renderer.render(this.scene, this.camera);
     }
 }
@@ -243,8 +262,9 @@ socket.on('secondPlayer', (gameState)=> {
     game.updateCameraPosition();
     game.playerOne.material.color.setHex(game.initColor[0]);
     game.playerTwo.material.color.setHex(game.initColor[1]);
+    game.gameStart = true;
 });
 
 socket.on('score',(gameState)=>{
-    game.makeFont(!game.secondPlayer ? `${gameState.oneName} ${gameState.score.playerOne} : ${gameState.score.playerTwo} ${gameState.twoName}`: `${gameState.twoName} ${gameState.score.playerTwo} : ${gameState.score.playerOne} ${gameState.oneName}`);
+    game.makeFont(!game.secondPlayer ? `${gameState.oneName} ${gameState.score.playerOne} : ${gameState.score.playerTwo} ${gameState.twoName}`: `${gameState.twoName} ${gameState.score.playerTwo} : ${gameState.score.playerOne} ${gameState.oneName}`,-40,50,0,false);
 });

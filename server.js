@@ -51,7 +51,7 @@ class Vec3 {
 const GAME_WIDTH = 100;
 const GAME_LENGTH = 250;
 const CONSTANT_BALL_SPEED = 50;
-
+const GAME_SET_SCORE = 3;
 class PingPongServer {
     constructor() {
         this.gameState = {
@@ -64,7 +64,7 @@ class PingPongServer {
             ballSummunDriction: true,
             score: { playerOne: 0, playerTwo: 0 },
         };
-
+        this.gameStart = false;
         this.clients = new Map();
         setInterval(() => this.updatePhysics(), 1000 / 60);
     }
@@ -90,6 +90,8 @@ class PingPongServer {
     }
 
     updatePhysics() {
+        if(!this.gameStart)
+            return;
         const { ball, ballVelocity } = this.gameState;
 
         // Update ball position
@@ -115,8 +117,12 @@ class PingPongServer {
                 this.gameState.score.playerOne++;
                 this.gameState.ballSummunDriction = 1;
             }
+            if(this.gameState.score.playerOne > GAME_SET_SCORE || this.gameState.score.playerTwo > GAME_SET_SCORE){
+                io.emit('gameEnd',`winner is ${this.gameState.score.playerOne > this.gameState.score.playerTwo ? this.gameState.oneName: this.gameState.twoName}`);
+            }
             io.emit('score', this.gameState);
-            this.resetBall();
+            if(this.gameStart)
+                this.resetBall();
         }
 
         // Broadcast updated game state
@@ -185,7 +191,13 @@ io.on('connection', (socket) => {
     game.clients.set(socket.id, socket);
     if(game.clients.size > 1){
         io.to(socket.id).emit('secondPlayer');
+        game.gameStart = true;
+        socket.emit('gameStart');
         console.log(game.clients.size);
+    }
+    else{
+        console.log('wait player');
+        socket.emit('gameWait');
     }
     // Send initial game state to the new client
     socket.emit('gameState', game.gameState);
