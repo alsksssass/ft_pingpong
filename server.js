@@ -118,6 +118,7 @@ class PingPongServer {
                 this.gameState.ballSummunDriction = 1;
             }
             if(this.gameState.score.playerOne > GAME_SET_SCORE || this.gameState.score.playerTwo > GAME_SET_SCORE){
+                this.gameStart = false;
                 io.emit('gameEnd',`winner is ${this.gameState.score.playerOne > this.gameState.score.playerTwo ? this.gameState.oneName: this.gameState.twoName}`);
             }
             io.emit('score', this.gameState);
@@ -192,7 +193,7 @@ io.on('connection', (socket) => {
     if(game.clients.size > 1){
         io.to(socket.id).emit('secondPlayer');
         game.gameStart = true;
-        socket.emit('gameStart');
+        io.emit('gameStart');
         console.log(game.clients.size);
     }
     else{
