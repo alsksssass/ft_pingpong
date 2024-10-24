@@ -3,6 +3,9 @@ import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 
 const socket = io();
+const WAIT_GAME = 1;
+const START_GAME = 2;
+const END_GAME = 3;
 
 class PingPongClient {
     constructor(remoteOption) {
@@ -14,10 +17,11 @@ class PingPongClient {
         this.gameWidth = 100;
         this.gameLenth = 250;
         this.initColor = [0xffffff, 0xff0000, 0x000000, 0x0000cc]
-        this.gameStart = false;
+        this.gameStart = WAIT_GAME;
         //두번째 플레이어 확인
         this.secondPlayer = false;
-        
+        //공 갯수
+        this.balls = [];
         // 텍스트
         this.textdata = null;
 
@@ -56,7 +60,7 @@ class PingPongClient {
         newDiv.appendChild(this.renderer.domElement);
         document.body.appendChild(newDiv);
     }
-    makeFont(msg, x, y, z) {
+    makeFont(msg) {
         const loader = new FontLoader();
         loader.load(
             'https://threejs.org/examples/fonts/helvetiker_regular.typeface.json',
@@ -72,10 +76,11 @@ class PingPongClient {
                     bevelOffset: 0.1,
                     bevelSegments: 1
                 });
+                textGeo.computeBoundingBox();
+                textGeo.center();
                 const material = new THREE.MeshPhongMaterial({ color: 0xffffff });
                 const textMesh = new THREE.Mesh(textGeo, material);
-                textMesh.position.set(x, y, z);
-                // textMesh.lookAt(this.camera.position); // 카메라를 향하도록 설정
+                textMesh.position.set(0, 50, 0);
                 if (this.textdata) {
                     // 기존 텍스트 지오메트리 삭제 및 업데이트
                     this.scene.remove(this.textdata); // 씬에서 텍스트 제거
@@ -144,6 +149,7 @@ class PingPongClient {
             y: event.clientY - this.previousMousePosition.y
         };
 
+        
         this.previousMousePosition = {
             x: event.clientX,
             y: event.clientY
@@ -157,7 +163,6 @@ class PingPongClient {
     }
 
     rotateCamera(deltaMove) {
-        console.log(this.cameraPhi, this.cameraRadius, this.cameraTheta);
         this.cameraTheta -= deltaMove.x * 0.01;
         this.cameraPhi -= deltaMove.y * 0.01;
         this.cameraPhi = Math.max(0.1, Math.min(Math.PI - 0.1, this.cameraPhi));
@@ -182,6 +187,50 @@ class PingPongClient {
         const ballMesh = new THREE.Mesh(ballGeometry, ballMaterial);
         this.scene.add(ballMesh);
         return ballMesh;
+    }
+
+    // 여러 개의 공을 생성하는 메서드
+    createBalls(count) {
+        // 기존 공들 제거
+        this.balls.forEach(ball => {
+            this.scene.remove(ball);
+            ball.geometry.dispose();
+            ball.material.dispose();
+        });
+        this.balls = [];
+
+        // 새로운 공들 생성
+        for (let i = 0; i < count; i++) {
+            const ball = this.createBall();
+            this.balls.push(ball);
+        }
+    }
+
+    updateGameState(gameState) {
+        this.playerOne.position.set(
+            gameState.playerOne.x, 
+            gameState.playerOne.y, 
+            gameState.playerOne.z
+        );
+        this.playerTwo.position.set(
+            gameState.playerTwo.x, 
+            gameState.playerTwo.y, 
+            gameState.playerTwo.z
+        );
+
+        // 공의 개수가 변경된 경우 공들을 새로 생성
+        if (this.balls.length !== gameState.balls.length) {
+            this.createBalls(gameState.balls.length);
+        }
+
+        // 각 공의 위치 업데이트
+        gameState.balls.forEach((ballData, index) => {
+            this.balls[index].position.set(
+                ballData.position.x,
+                ballData.position.y,
+                ballData.position.z
+            );
+        });
     }
 
     makeGameBar(x, y, z, check) {
@@ -220,44 +269,109 @@ class PingPongClient {
         this.scene.add(this.rightGuide);
     }
 
-    updateGameState(gameState) {
-        this.playerOne.position.set(gameState.playerOne.x, gameState.playerOne.y, gameState.playerOne.z);
-        this.playerTwo.position.set(gameState.playerTwo.x, gameState.playerTwo.y, gameState.playerTwo.z);
-        this.ball.position.set(gameState.ball.x, gameState.ball.y, gameState.ball.z);
-    }
 
     setupSocketListeners() {
-        socket.on('gameState', (gameState) => {
-            this.updateGameState(gameState);
+        socket.on('data', (gameState) => {
+            console.log(gameState.type, gameState);
+            
+            if(gameState.type === 'gameState') {
+                this.updateGameState(gameState);
+            }
+            else if(gameState.type === 'score') {
+                this.makeFont(!this.secondPlayer ? 
+                    `${gameState.oneName} ${gameState.score.playerOne} : ${gameState.score.playerTwo} ${gameState.twoName}`: 
+                    `${gameState.twoName} ${gameState.score.playerTwo} : ${gameState.score.playerOne} ${gameState.oneName}`
+                );
+            }
+            else if(gameState.type === 'gameStart') {
+                this.gameStart = START_GAME;
+                this.makeFont(!this.secondPlayer ? 
+                    `${gameState.oneName} ${gameState.score.playerOne} : ${gameState.score.playerTwo} ${gameState.twoName}`: 
+                    `${gameState.twoName} ${gameState.score.playerTwo} : ${gameState.score.playerOne} ${gameState.oneName}`
+                );
+            }
+            else if(gameState.type === 'gameEnd') {
+                this.gameStart = END_GAME;
+                this.makeFont(gameState.txt);
+                this.textdata.lookAt(this.camera.position);
+            }
+            else if(gameState.type === 'secondPlayer') {
+                this.secondPlayer = true;
+                this.cameraTheta = -this.cameraTheta;
+                this.updateCameraPosition();
+                this.playerOne.material.color.setHex(this.initColor[0]);
+                this.playerTwo.material.color.setHex(this.initColor[1]);
+            }
+            else if(gameState.type === 'gameWait') {
+                this.gameStart = WAIT_GAME;
+            }
         });
     }
 
     animate() {
         requestAnimationFrame(this.animate);
-        if(this.gameStart === true){
-            if(this.textdata){
+        if(this.gameStart === START_GAME) {
+            if(this.textdata) {
                 this.textdata.lookAt(this.camera.position);
             }
         }
-        else
-            this.makeFont('waiting for player!',-40,50,0);
+        else if(this.gameStart === WAIT_GAME) {
+            this.makeFont('waiting for player!');
+        }
+        else if(this.gameStart === END_GAME) {
+            this.textdata.rotation.y += 0.05;
+        }
         this.renderer.render(this.scene, this.camera);
     }
 }
 
 const game = new PingPongClient(true);
 
-socket.on('secondPlayer', (gameState)=> {
-    game.secondPlayer = true;
-    game.cameraTheta = -game.cameraTheta;
-    game.updateCameraPosition();
-    game.playerOne.material.color.setHex(game.initColor[0]);
-    game.playerTwo.material.color.setHex(game.initColor[1]);
-    game.gameStart = true;
-});
+// socket.on('secondPlayer', (gameState)=> {
+//     game.secondPlayer = true;
+//     game.cameraTheta = -game.cameraTheta;
+//     game.updateCameraPosition();
+//     game.playerOne.material.color.setHex(game.initColor[0]);
+//     game.playerTwo.material.color.setHex(game.initColor[1]);
+// });
 
-socket.on('score',(gameState)=>{
-    game.makeFont(!game.secondPlayer ? `${gameState.oneName} ${gameState.score.playerOne} : ${gameState.score.playerTwo} ${gameState.twoName}`: `${gameState.twoName} ${gameState.score.playerTwo} : ${gameState.score.playerOne} ${gameState.oneName}`,-40,50,0);
-});
-socket.on('gameEnd',(txt)=>{
-});
+// socket.on('score',(gameState)=>{
+//     game.makeFont(!game.secondPlayer ? `${gameState.oneName} ${gameState.score.playerOne} : ${gameState.score.playerTwo} ${gameState.twoName}`: `${gameState.twoName} ${gameState.score.playerTwo} : ${gameState.score.playerOne} ${gameState.oneName}`);
+// });
+// socket.on('gameStart',(gameState)=>{
+//     game.gameStart = START_GAME;
+//     game.makeFont(!game.secondPlayer ? `${gameState.oneName} ${gameState.score.playerOne} : ${gameState.score.playerTwo} ${gameState.twoName}`: `${gameState.twoName} ${gameState.score.playerTwo} : ${gameState.score.playerOne} ${gameState.oneName}`);
+// });
+// socket.on('gameEnd',(txt)=>{
+//     game.gameStart = END_GAME;
+//     game.makeFont(txt);
+//     game.textdata.lookAt(game.camera.position);
+//     // game.textdata.lookAt(game.camera.position);
+//     // alert(txt);
+// });
+
+// socket.on('data',(gameState = null)=>{
+//     console.log(gameState.type,gameState);
+//     if(gameState.type === 'score'){
+//         game.makeFont(!game.secondPlayer ? `${gameState.oneName} ${gameState.score.playerOne} : ${gameState.score.playerTwo} ${gameState.twoName}`: `${gameState.twoName} ${gameState.score.playerTwo} : ${gameState.score.playerOne} ${gameState.oneName}`);
+//     }
+//     else if(gameState.type === 'gameStart'){
+//     game.gameStart = START_GAME;
+//     game.makeFont(!game.secondPlayer ? `${gameState.oneName} ${gameState.score.playerOne} : ${gameState.score.playerTwo} ${gameState.twoName}`: `${gameState.twoName} ${gameState.score.playerTwo} : ${gameState.score.playerOne} ${gameState.oneName}`);
+//     }
+//     else if(gameState.type === 'gameEnd'){
+//     game.gameStart = END_GAME;
+//     game.makeFont(gameState.txt);
+//     game.textdata.lookAt(game.camera.position);
+//     }
+//     else if(gameState.type === 'secondPlayer'){
+//     game.secondPlayer = true;
+//     game.cameraTheta = -game.cameraTheta;
+//     game.updateCameraPosition();
+//     game.playerOne.material.color.setHex(game.initColor[0]);
+//     game.playerTwo.material.color.setHex(game.initColor[1]);
+//     }
+//     else if(gameState.type === 'gameWait'){
+//         game.gameStart = WAIT_GAME;
+//     }
+// })
