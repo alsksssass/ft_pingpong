@@ -54,6 +54,7 @@ class Ball {
     }
 }
 
+const AI_SPEED = 5;
 class PingPongAI {
     constructor(gameWidth, gameLength) {
         this.gameWidth = gameWidth;
@@ -62,10 +63,10 @@ class PingPongAI {
         this.updateInterval = 1000; // 1초마다 업데이트
         this.lastMoveTime = Date.now();
         this.predictedX = 0;
-        this.reactionDelay = 100; // AI의 반응 지연시간 (ms)
+        this.reactionDelay = 1000; // AI의 반응 지연시간 (ms)
         this.lastPaddlePos = 0;
-        this.maxMoveSpeed = 2; // 한 번에 이동할 수 있는 최대 거리
-        this.difficulty = 0.9; // AI 정확도 (0.0 ~ 1.0)
+        this.maxMoveSpeed = AI_SPEED; // 한 번에 이동할 수 있는 최대 거리
+        this.difficulty = 0.2; // AI 정확도 (0.0 ~ 1.0)
     }
 
     // 공의 위치가 패들에 도달할 시점의 X 좌표 예측
@@ -169,7 +170,7 @@ const CONSTANT_BALL_SPEED = 50;
 const GAME_SET_SCORE = 5;
 
 class PingPongServer {
-    constructor(ballCount = 1) {
+    constructor(multiOption = false,ballCount = 1) {
         this.gameState = {
             oneName: 'sabyun',
             twoName: 'ai',
@@ -183,7 +184,9 @@ class PingPongServer {
         for (let i = 0; i < ballCount; i++) {
             this.addBall();
         }
-
+        this.ai = new PingPongAI(GAME_WIDTH, GAME_LENGTH);
+        this.isSinglePlayer = multiOption;
+        this.aiUpdateInterval = setInterval(() => this.updateAI(), 1000/60);
         this.gameStart = false;
         this.clients = new Map();
         this.resetAllBalls();
@@ -205,6 +208,16 @@ class PingPongServer {
         const vz = Math.cos(angle) * CONSTANT_BALL_SPEED * direction;
         
         ball.velocity = new Vec3(vx, 0, vz);
+    }
+    updateAI() {
+        if (!this.isSinglePlayer || !this.gameStart) return;
+        const aiMove = this.ai.update(this.gameState);
+        if (aiMove) {
+            this.handlePlayerInput('ai', aiMove, true);
+            setTimeout(() => {
+                this.handlePlayerInput('ai', aiMove, false);
+            }, 1000); // 키 누름 시뮬레이션
+        }
     }
 
     updatePhysics() {
@@ -248,11 +261,11 @@ class PingPongServer {
                     );
                     this.gameStart = false;
                 }
-
                 if (this.gameStart) {
                     this.socketSend('score');
                     this.resetBall(ball);
                 }
+                this.updateAI();
             }
         });
 
@@ -297,10 +310,9 @@ class PingPongServer {
     }
 
     handlePlayerInput(playerId, key, pressed) {
-        const player = playerId === Array.from(this.clients.keys())[0] ? 
-            this.gameState.playerOne : 
-            this.gameState.playerTwo;
-        const moveSpeed = 2;
+        const player = (playerId === 'ai' || playerId === Array.from(this.clients.keys())[1]) ? 
+            this.gameState.playerTwo : this.gameState.playerOne;
+        const moveSpeed = playerId === 'ai' ? AI_SPEED:2;
 
         if (key === 'A' && pressed) {
             player.x -= moveSpeed;
@@ -322,7 +334,8 @@ class PingPongServer {
         } else if (type === 'gameWait' && op) {
             op.emit('data', { type });
         } else if (type === 'secondPlayer') {
-            io.to(op).emit('data', { type });
+            if(!this.isSinglePlayer)
+                io.to(op).emit('data', { type });
             this.socketSend('gameStart');
         } else if (!op) {
             op.emit('data', { type });
@@ -333,16 +346,17 @@ class PingPongServer {
 }
 
 // 게임 인스턴스 생성 (2개의 공으로 시작)
-const game = new PingPongServer(2);
+const game = new PingPongServer(true,1);
 
 io.on('connection', (socket) => {
     console.log('New client connected:', socket.id);
     game.clients.set(socket.id, socket);
     
-    if (game.clients.size > 1) {
+    if (game.clients.size > 1 || game.isSinglePlayer) {
         game.socketSend('secondPlayer', socket.id);
         game.gameStart = true;
-    } else {
+    }
+    else {
         console.log('wait player');
         game.socketSend('gameWait', socket);
     }
@@ -356,7 +370,6 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
         game.clients.delete(socket.id);
-        game = new PingPongServer(2);
     });
 });
 
