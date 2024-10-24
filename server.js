@@ -169,7 +169,7 @@ const CONSTANT_BALL_SPEED = 50;
 const GAME_SET_SCORE = 5;
 
 class PingPongServer {
-    constructor(multiOption = false,ballCount = 1) {
+    constructor(ballCount = 1) {
         this.gameState = {
             oneName: 'sabyun',
             twoName: 'ai',
@@ -183,9 +183,7 @@ class PingPongServer {
         for (let i = 0; i < ballCount; i++) {
             this.addBall();
         }
-        this.ai = new PingPongAI(GAME_WIDTH, GAME_LENGTH);
-        this.isSinglePlayer = multiOption;
-        this.aiUpdateInterval = setInterval(() => this.updateAI(), 1000/60);
+
         this.gameStart = false;
         this.clients = new Map();
         this.resetAllBalls();
@@ -207,16 +205,6 @@ class PingPongServer {
         const vz = Math.cos(angle) * CONSTANT_BALL_SPEED * direction;
         
         ball.velocity = new Vec3(vx, 0, vz);
-    }
-    updateAI() {
-        if (!this.isSinglePlayer || !this.gameStart) return;
-        const aiMove = this.ai.update(this.gameState);
-        if (aiMove) {
-            this.handlePlayerInput('ai', aiMove, true);
-            setTimeout(() => {
-                this.handlePlayerInput('ai', aiMove, false);
-            }, 50); // 키 누름 시뮬레이션
-        }
     }
 
     updatePhysics() {
@@ -260,8 +248,7 @@ class PingPongServer {
                     );
                     this.gameStart = false;
                 }
-                if(this.isSinglePlayer)
-                    this.updateAI();
+
                 if (this.gameStart) {
                     this.socketSend('score');
                     this.resetBall(ball);
@@ -310,8 +297,9 @@ class PingPongServer {
     }
 
     handlePlayerInput(playerId, key, pressed) {
-        const player = (playerId === 'ai' || playerId === Array.from(this.clients.keys())[0]) ? 
-            this.gameState.playerOne : this.gameState.playerTwo;
+        const player = playerId === Array.from(this.clients.keys())[0] ? 
+            this.gameState.playerOne : 
+            this.gameState.playerTwo;
         const moveSpeed = 2;
 
         if (key === 'A' && pressed) {
@@ -334,8 +322,7 @@ class PingPongServer {
         } else if (type === 'gameWait' && op) {
             op.emit('data', { type });
         } else if (type === 'secondPlayer') {
-            if(!this.isSinglePlayer)
-                io.to(op).emit('data', { type });
+            io.to(op).emit('data', { type });
             this.socketSend('gameStart');
         } else if (!op) {
             op.emit('data', { type });
@@ -346,17 +333,16 @@ class PingPongServer {
 }
 
 // 게임 인스턴스 생성 (2개의 공으로 시작)
-const game = new PingPongServer(true,2);
+const game = new PingPongServer(2);
 
 io.on('connection', (socket) => {
     console.log('New client connected:', socket.id);
     game.clients.set(socket.id, socket);
     
-    if (game.clients.size > 1 || game.isSinglePlayer) {
+    if (game.clients.size > 1) {
         game.socketSend('secondPlayer', socket.id);
         game.gameStart = true;
-    }
-    else {
+    } else {
         console.log('wait player');
         game.socketSend('gameWait', socket);
     }
@@ -370,6 +356,7 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
         game.clients.delete(socket.id);
+        game = new PingPongServer(2);
     });
 });
 
