@@ -4,6 +4,7 @@ const socketIo = require('socket.io');
 const path = require('path');
 const { update } = require('three/examples/jsm/libs/tween.module.js');
 const { time } = require('console');
+const { type } = require('os');
 // const { element } = require('three/webgpu');
 
 const app = express();
@@ -148,7 +149,6 @@ class PingPongServer {
             // Check wall collisions
             if (Math.abs(ball.position.x) > GAME_WIDTH/2 - 2) {
                 ball.velocity.x *= -1;
-                console.log('hit ')
                 this.socketSend('sound','ballToWall');
             }
 
@@ -207,6 +207,7 @@ class PingPongServer {
 
         // 3. 거리가 구의 반지름보다 작거나 같으면 충돌
         if (distance <= BALL_SIZE) {
+            this.socketSend('sound','ballToWall');
             const hitPointDiff = ball.position.x - paddle.x;
             const maxBounceAngle = Math.PI / 3;
             const bounceAngle = (hitPointDiff / 10) * maxBounceAngle;
@@ -276,6 +277,9 @@ class PingPongServer {
         else if(type === 'sound'){
             io.emit('data',{type, sound : op});
         }
+        else if(type === 'effect'){
+            io.emit('data',{type,op});
+        }
     }
 }
 
@@ -308,7 +312,10 @@ io.on('connection', (socket) => {
         else{
             const player = !data.who ? game.gameState.playerOne:game.gameState.playerTwo;
             const isCollision = game.gameState.balls.filter(element => game.isInRange(Math.floor(element.position.x), Math.floor(player.x),10) && game.isInRange(Math.floor(element.position.z), Math.floor(player.z),10));
-            if(isCollision.length ===1) game.setBallVelocity(isCollision[0],2);
+            if(isCollision.length === 1) {
+                game.setBallVelocity(isCollision[0],2);
+                game.socketSend('effect',isCollision[0].position);
+            };
     }
     });
 

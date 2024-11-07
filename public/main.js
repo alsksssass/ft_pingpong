@@ -8,6 +8,134 @@ const END_GAME = 3;
 const SOUND_BALL = 'public/localdata/sound/ball.mp3';
 const audioListenr = new THREE.AudioListener();
 const basicSound = new THREE.Audio(audioListenr);
+//폭발
+class ImpactEffect {
+    constructor(scene) {
+        this.scene = scene;
+        this.impacts = [];
+        this.settings = {
+            rings: 4,                // 동심원 갯수
+            particlesPerRing: 30,    // 각 링의 파티클 수
+            startRadius: 2,          // 시작 반지름
+            maxRadius: 15,           // 최대 반지름
+            expandSpeed: 0.5,        // 확장 속도ddd
+            duration: 100,          // 지속 시간 (ms)
+            colors: [0xFD0140, 0xFF140, 0xFB9B2E, 0xF78180],
+            particleSize: 0.5,       // 파티클 크기
+            fadeSpeed: 0.02,         // 페이드아웃 속도
+            rotationSpeed: 0.02,     // 회전 속도
+            verticalSpeed: 0.1,      // 수직 이동 속도
+            thickness: 0.5           // 각 링의 두께
+        };
+    }
+
+    createImpact(position) {
+        const rings = [];
+
+        // 각 링에 대해
+        for (let r = 0; r < this.settings.rings; r++) {
+            const geometry = new THREE.BufferGeometry();
+            const positions = [];
+            const baseRadius = this.settings.startRadius + (r * this.settings.thickness);
+            const particleCount = this.settings.particlesPerRing * (r + 1);
+            
+            // 링의 각 파티클 위치 계산
+            for (let i = 0; i < particleCount; i++) {
+                const angle = (i / particleCount) * Math.PI * 2;
+                const x = Math.cos(angle) * baseRadius;
+                const z = Math.sin(angle) * baseRadius;
+                positions.push(x + position.x, position.y, z + position.z);
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+            // 파티클 머티리얼 생성
+            const material = new THREE.PointsMaterial({
+                size: this.settings.particleSize,
+                color: this.settings.colors[r % this.settings.colors.length],
+                transparent: true,
+                opacity: 1,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            const ring = new THREE.Points(geometry, material);
+            rings.push({
+                object: ring,
+                radius: baseRadius,
+                particleCount: particleCount,
+                rotationOffset: Math.random() * Math.PI * 2,
+                verticalOffset: 0
+            });
+
+            this.scene.add(ring);
+        }
+
+        const impact = {
+            rings: rings,
+            position: position,
+            startTime: Date.now(),
+            life: 1.0
+        };
+
+        this.impacts.push(impact);
+
+        // 일정 시간 후 제거
+        setTimeout(() => {
+            impact.rings.forEach(ring => {
+                this.scene.remove(ring.object);
+                ring.object.geometry.dispose();
+                ring.object.material.dispose();
+            });
+            this.impacts = this.impacts.filter(imp => imp !== impact);
+        }, this.settings.duration);
+    }
+
+    update() {
+        const currentTime = Date.now();
+
+        for (const impact of this.impacts) {
+            const elapsed = (currentTime - impact.startTime) / this.settings.duration;
+            const expandFactor = Math.min(elapsed * this.settings.expandSpeed, 1);
+
+            impact.rings.forEach((ring, ringIndex) => {
+                const positions = ring.object.geometry.attributes.position.array;
+                const baseRadius = ring.radius + (this.settings.maxRadius - ring.radius) * expandFactor;
+                
+                // 각 파티클 업데이트
+                for (let i = 0; i < positions.length; i += 3) {
+                    const particleIndex = i / 3;
+                    const angle = ((particleIndex / ring.particleCount) * Math.PI * 2) + 
+                                (ring.rotationOffset + this.settings.rotationSpeed * elapsed);
+                    
+                    // 나선형 효과를 위한 반경 변화
+                    const radiusVariation = Math.sin(angle * (ringIndex + 1) + elapsed * 5) * 0.2;
+                    const currentRadius = baseRadius * (1 + radiusVariation);
+
+                    positions[i] = impact.position.x + Math.cos(angle) * currentRadius;
+                    positions[i + 1] = impact.position.y + ring.verticalOffset;
+                    positions[i + 2] = impact.position.z + Math.sin(angle) * currentRadius;
+                }
+
+                // 수직 이동
+                ring.verticalOffset += this.settings.verticalSpeed;
+                
+                // 회전
+                ring.rotationOffset += this.settings.rotationSpeed * (ringIndex + 1);
+
+                ring.object.geometry.attributes.position.needsUpdate = true;
+
+                // 투명도 조절
+                ring.object.material.opacity = Math.max(0, 1 - elapsed);
+            });
+        }
+    }
+
+    // 설정 업데이트
+    updateSettings(newSettings) {
+        this.settings = { ...this.settings, ...newSettings };
+    }
+}
 
 // 오디오 관리 클래스
 class AudioManager {
@@ -169,6 +297,8 @@ class PingPongClient {
         this.balls = [];
         // 텍스트
         this.textdata = null;
+        //이펙트
+        this.effect = new ImpactEffect(this.scene);
 
         // 마우스 이벤트 관련 변수
         this.isDragging = false;
@@ -202,7 +332,7 @@ class PingPongClient {
             const handleFirstInteraction = async () => {
                 try {
                     await this.audio.init();
-                    await this.audio.loadSound('ball', 'https://raw.githubusercontent.com/alsksssass/ft_pingpong/99e11433ef158f9e374fd79f6d0d54dbe2039804/public/localdata/sound/ball.mp3', {
+                    await this.audio.loadSound('ball', 'https://raw.githubusercontent.com/alsksssass/ft_pingpong/master/public/localdata/sound/ball.mp3', {
                         loop: false,
                         volume: 0.9
                     });
@@ -495,6 +625,10 @@ class PingPongClient {
                 if(gameState.sound == 'ballToWall' && this.audio.sounds.has('ball')){
                     this.audio.play('ball');
                 }
+            }
+            else if(gameState.type === 'effect'){
+                console.log(gameState.op);
+                this.effect.createImpact(gameState.op);
             }
         });
     }
