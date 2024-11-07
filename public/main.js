@@ -202,7 +202,7 @@ class PingPongClient {
             const handleFirstInteraction = async () => {
                 try {
                     await this.audio.init();
-                    await this.audio.loadSound('ball', 'public/localdata/sound/ball.mp3', {
+                    await this.audio.loadSound('ball', 'https://raw.githubusercontent.com/alsksssass/ft_pingpong/99e11433ef158f9e374fd79f6d0d54dbe2039804/public/localdata/sound/ball.mp3', {
                         loop: false,
                         volume: 0.9
                     });
