@@ -246,8 +246,8 @@ class PingPongClient {
     makeFont(msg) {
         const loader = new FontLoader();
         loader.load(
-            '/localdata/helvetiker_regular.typeface.json',
-            // 'https://threejs.org/examples/fonts/helvetiker_regular.typeface.json',
+            // '/localdata/helvetiker_regular.typeface.json',
+            'https://threejs.org/examples/fonts/helvetiker_regular.typeface.json',
             (font) => {
                 const textGeo = new TextGeometry(msg, {
                     font: font,
