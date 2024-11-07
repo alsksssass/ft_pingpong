@@ -2,6 +2,9 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
+const { update } = require('three/examples/jsm/libs/tween.module.js');
+const { time } = require('console');
+// const { element } = require('three/webgpu');
 
 const app = express();
 const server = http.createServer(app);
@@ -45,129 +48,27 @@ class Vec3 {
     }
 }
 
-class Ball {
-    constructor(id) {
-        this.id = id;
-        this.position = { x: 0, y: 6, z: 0 };
-        this.velocity = new Vec3();
-        this.summunDirection = true;
-    }
-}
-
-const AI_SPEED = 5;
-class PingPongAI {
-    constructor(gameWidth, gameLength) {
-        this.gameWidth = gameWidth;
-        this.gameLength = gameLength;
-        this.paddleWidth = 20;
-        this.updateInterval = 1000; // 1초마다 업데이트
-        this.lastMoveTime = Date.now();
-        this.predictedX = 0;
-        this.reactionDelay = 1000; // AI의 반응 지연시간 (ms)
-        this.lastPaddlePos = 0;
-        this.maxMoveSpeed = AI_SPEED; // 한 번에 이동할 수 있는 최대 거리
-        this.difficulty = 0.2; // AI 정확도 (0.0 ~ 1.0)
-    }
-
-    // 공의 위치가 패들에 도달할 시점의 X 좌표 예측
-    predictBallPosition(ball, ballVelocity) {
-        if (ballVelocity.z >= 0) {
-            // 공이 AI 쪽으로 오고 있지 않은 경우
-            return this.lastPaddlePos;
-        }
-
-        // 공이 패들에 도달하는 시간 계산
-        const distanceToTravel = Math.abs(ball.z - (-this.gameLength/2));
-        const timeToIntercept = Math.abs(distanceToTravel / ballVelocity.z);
-
-        // 예상 X 위치 계산
-        let predictedX = ball.x + (ballVelocity.x * timeToIntercept);
-
-        // 벽과의 충돌 고려
-        const bounces = Math.floor(Math.abs(predictedX) / (this.gameWidth/2));
-        if (bounces % 2 === 1) {
-            // 홀수 번 튕기는 경우
-            predictedX = this.gameWidth/2 - (Math.abs(predictedX) % (this.gameWidth/2));
-            if (predictedX < 0) predictedX *= -1;
-        } else {
-            // 짝수 번 튕기는 경우
-            predictedX = Math.abs(predictedX) % (this.gameWidth/2);
-            if (ball.x < 0) predictedX *= -1;
-        }
-
-        // AI 난이도에 따른 오차 추가
-        const maxError = this.paddleWidth * (1 - this.difficulty);
-        const randomError = (Math.random() - 0.5) * maxError;
-        predictedX += randomError;
-
-        // 패들이 이동할 수 있는 범위로 제한
-        return Math.max(
-            -this.gameWidth/2 + this.paddleWidth/2, 
-            Math.min(this.gameWidth/2 - this.paddleWidth/2, predictedX)
-        );
-    }
-
-    // AI 의사결정 및 이동
-    update(gameState) {
-        const currentTime = Date.now();
-        if (currentTime - this.lastMoveTime < this.updateInterval) {
-            return null; // 아직 업데이트 시간이 되지 않음
-        }
-
-        this.lastMoveTime = currentTime;
-
-        // 모든 공에 대해 예측을 수행하고 가장 가까운 공을 타겟팅
-        let closestBall = null;
-        let shortestTime = Infinity;
-
-        for (const ball of gameState.balls) {
-            // 공의 위치와 속도
-            const ballPos = ball.position;
-            const ballVel = ball.velocity;
-
-            // 공이 AI 쪽으로 오고 있는 경우만 고려
-            if (ballVel.z < 0) {
-                const timeToIntercept = Math.abs((ballPos.z - (-this.gameLength/2)) / ballVel.z);
-                if (timeToIntercept < shortestTime) {
-                    shortestTime = timeToIntercept;
-                    closestBall = ball;
-                }
-            }
-        }
-
-        if (!closestBall) {
-            // 모든 공이 반대 방향으로 가고 있는 경우, 중앙으로 복귀
-            this.predictedX = 0;
-        } else {
-            this.predictedX = this.predictBallPosition(
-                closestBall.position,
-                closestBall.velocity
-            );
-        }
-
-        // 현재 패들 위치와 목표 위치의 차이 계산
-        const currentPaddleX = gameState.playerTwo.x;
-        const distance = this.predictedX - currentPaddleX;
-        
-        // 부드러운 이동을 위한 이동량 계산
-        let moveAmount = Math.min(Math.abs(distance), this.maxMoveSpeed) * Math.sign(distance);
-        
-        this.lastPaddlePos = currentPaddleX + moveAmount;
-        
-        // 이동 방향 결정
-        if (Math.abs(moveAmount) < 0.1) {
-            return null; // 작은 움직임은 무시
-        }
-        
-        return moveAmount > 0 ? 'D' : 'A';
-    }
-}
 
 
 const GAME_WIDTH = 100;
 const GAME_LENGTH = 250;
 const CONSTANT_BALL_SPEED = 50;
 const GAME_SET_SCORE = 5;
+const AI_RATE = 10;
+const BALL_SIZE = 5;
+const PADDLE_WIDTH = 20;
+const PADDLE_height = 5;
+const PADDLE_depth = 5;
+class Ball {
+    constructor(id) {
+        this.id = id;
+        this.position = { x: 0, y: 6, z: 0 };
+        this.velocity = new Vec3();
+        this.summunDirection = true;
+        this.powerCounter = 0;
+        this.radius = BALL_SIZE;
+    }
+}
 
 class PingPongServer {
     constructor(multiOption = false,ballCount = 1) {
@@ -184,13 +85,13 @@ class PingPongServer {
         for (let i = 0; i < ballCount; i++) {
             this.addBall();
         }
-        this.ai = new PingPongAI(GAME_WIDTH, GAME_LENGTH);
-        this.isSinglePlayer = multiOption;
-        this.aiUpdateInterval = setInterval(() => this.updateAI(), 1000/60);
+        this.isSinglePlayer = multiOption? true:{A:false,B:false};
         this.gameStart = false;
         this.clients = new Map();
         this.resetAllBalls();
         setInterval(() => this.updatePhysics(), 1000 / 60);
+        if(this.isSinglePlayer !== true)
+            setInterval(() => this.updateAi(), 1000 / 10);
     }
 
     addBall() {
@@ -199,27 +100,38 @@ class PingPongServer {
         this.setBallVelocity(ball);
     }
 
-    setBallVelocity(ball) {
+    setBallVelocity(ball,powerUp = 1) {
         const maxAngle = Math.PI / 3;
         const angle = (Math.random() * 2 - 1) * maxAngle;
         const direction = ball.summunDirection ? 1 : -1;
-        
-        const vx = Math.sin(angle) * CONSTANT_BALL_SPEED;
-        const vz = Math.cos(angle) * CONSTANT_BALL_SPEED * direction;
-        
+        powerUp = ball.powerCounter > 1 ? 1: powerUp;
+        ball.powerCounter = powerUp === 2 ? 1 :0;
+        const vx = Math.sin(angle) * CONSTANT_BALL_SPEED * powerUp;
+        const vz = Math.cos(angle) * CONSTANT_BALL_SPEED * powerUp* direction;
         ball.velocity = new Vec3(vx, 0, vz);
     }
-    updateAI() {
-        if (!this.isSinglePlayer || !this.gameStart) return;
-        const aiMove = this.ai.update(this.gameState);
-        if (aiMove) {
-            this.handlePlayerInput('ai', aiMove, true);
-            setTimeout(() => {
-                this.handlePlayerInput('ai', aiMove, false);
-            }, 1000); // 키 누름 시뮬레이션
+    
+    updateAi() {
+        const ballPosition = this.gameState.balls;
+        let target = 0;
+        if(ballPosition.length !==1){
+            target = ballPosition.findIndex((item, index) => 
+                item.position.z === Math.min(...ballPosition.map(b => b.position.z))
+        );
+        }
+        if(ballPosition[target].position.x < this.gameState.balls[target].position.z) return;  //is comming
+        if(ballPosition[target].z > 0 || Math.floor(Math.random() *100) < AI_RATE) return; //over half and ai rate
+        if(ballPosition[target].position.x < this.gameState.playerTwo.x){
+            if(this.isSinglePlayer.B) this.isSinglePlayer.B = false;
+            if(!this.isSinglePlayer.A === true) this.isSinglePlayer.A = true;
+            this.handlePlayerInput('ai','A',this.isSinglePlayer.A);
+        }
+        else{
+            if(this.isSinglePlayer.A) this.isSinglePlayer.A = false;
+            if(!this.isSinglePlayer.B === true) this.isSinglePlayer.B = true;
+            this.handlePlayerInput('ai','D',this.isSinglePlayer.B);
         }
     }
-
     updatePhysics() {
         if (!this.gameStart) return;
 
@@ -236,6 +148,8 @@ class PingPongServer {
             // Check wall collisions
             if (Math.abs(ball.position.x) > GAME_WIDTH/2 - 2) {
                 ball.velocity.x *= -1;
+                console.log('hit ')
+                this.socketSend('sound','ballToWall');
             }
 
             // Check scoring
@@ -253,6 +167,7 @@ class PingPongServer {
 
                 if (this.gameState.score.playerOne > GAME_SET_SCORE || 
                     this.gameState.score.playerTwo > GAME_SET_SCORE) {
+                        console.log('end!!');
                     this.socketSend('gameEnd', 
                         `winner is ${this.gameState.score.playerOne > 
                             this.gameState.score.playerTwo ? 
@@ -265,7 +180,6 @@ class PingPongServer {
                     this.socketSend('score');
                     this.resetBall(ball);
                 }
-                this.updateAI();
             }
         });
 
@@ -273,19 +187,33 @@ class PingPongServer {
     }
 
     checkPaddleCollision(ball, paddle) {
-        const dx = ball.position.x - paddle.x;
-        const dy = ball.position.y - paddle.y;
-        const dz = ball.position.z - paddle.z;
-        const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
 
-        if (distance < 9) {
+        // 1. 구의 중심에서 가장 가까운 박스 위의 점 찾기
+        const closestPoint = {
+            x: Math.max(paddle.x - PADDLE_WIDTH / 2,
+                Math.min(ball.position.x, paddle.x + PADDLE_WIDTH / 2)),
+            y: Math.max(paddle.y - PADDLE_height / 2,
+                Math.min(ball.position.y, paddle.y + PADDLE_height / 2)),
+            z: Math.max(paddle.z - PADDLE_depth / 2,
+                Math.min(ball.position.z, paddle.z + PADDLE_depth / 2))
+        };
+
+        // 2. 구의 중심과 가장 가까운 점 사이의 거리 계산
+        const distance = Math.sqrt(
+            Math.pow(ball.position.x - closestPoint.x, 2) +
+            Math.pow(ball.position.y - closestPoint.y, 2) +
+            Math.pow(ball.position.z - closestPoint.z, 2)
+        );
+
+        // 3. 거리가 구의 반지름보다 작거나 같으면 충돌
+        if (distance <= BALL_SIZE) {
             const hitPointDiff = ball.position.x - paddle.x;
             const maxBounceAngle = Math.PI / 3;
             const bounceAngle = (hitPointDiff / 10) * maxBounceAngle;
 
             const speed = new Vec3(
-                ball.velocity.x, 
-                ball.velocity.y, 
+                ball.velocity.x,
+                ball.velocity.y,
                 ball.velocity.z
             ).length();
             const direction = (ball.position.z < paddle.z) ? -1 : 1;
@@ -295,9 +223,12 @@ class PingPongServer {
             ball.velocity.y = Math.min(ball.velocity.y, 0);
         }
     }
-
+    isInRange(number, target, range) {
+        return Math.abs(number - target) <= range;
+    }
     resetBall(ball) {
         ball.position = { x: 0, y: 5, z: 0 };
+        ball.powerCounter = 0;
         this.setBallVelocity(ball);
     }
 
@@ -312,7 +243,7 @@ class PingPongServer {
     handlePlayerInput(playerId, key, pressed) {
         const player = (playerId === 'ai' || playerId === Array.from(this.clients.keys())[1]) ? 
             this.gameState.playerTwo : this.gameState.playerOne;
-        const moveSpeed = playerId === 'ai' ? AI_SPEED:2;
+        const moveSpeed = 2;
 
         if (key === 'A' && pressed) {
             player.x -= moveSpeed;
@@ -320,7 +251,7 @@ class PingPongServer {
             player.x += moveSpeed;
         }
 
-        player.x = Math.max(-GAME_WIDTH/2 + 10, 
+        player.x = Math.max(-GAME_WIDTH/2 + 10,
             Math.min(GAME_WIDTH/2 - 10, player.x));
     }
 
@@ -342,29 +273,43 @@ class PingPongServer {
         } else if (type === 'gameEnd') {
             io.emit('data', { type, txt: op });
         }
+        else if(type === 'sound'){
+            io.emit('data',{type, sound : op});
+        }
     }
 }
 
 // 게임 인스턴스 생성 (2개의 공으로 시작)
-const game = new PingPongServer(true,1);
+const game = new PingPongServer(false,2);
 
 io.on('connection', (socket) => {
     console.log('New client connected:', socket.id);
     game.clients.set(socket.id, socket);
     
-    if (game.clients.size > 1 || game.isSinglePlayer) {
+    if (game.clients.size > 1) {
         game.socketSend('secondPlayer', socket.id);
+        game.socketSend('gameStart');
         game.gameStart = true;
     }
     else {
         console.log('wait player');
         game.socketSend('gameWait', socket);
+        if(game.isSinglePlayer){
+        game.socketSend('gameStart');
+        game.gameStart = true;
+        }
     }
     
     game.socketSend('gameState', socket);
 
     socket.on('keyPress', (data) => {
-        game.handlePlayerInput(socket.id, data.key, data.pressed);
+        if(data.key !==' ')
+            game.handlePlayerInput(socket.id, data.key, data.pressed);
+        else{
+            const player = !data.who ? game.gameState.playerOne:game.gameState.playerTwo;
+            const isCollision = game.gameState.balls.filter(element => game.isInRange(Math.floor(element.position.x), Math.floor(player.x),10) && game.isInRange(Math.floor(element.position.z), Math.floor(player.z),10));
+            if(isCollision.length ===1) game.setBallVelocity(isCollision[0],2);
+    }
     });
 
     socket.on('disconnect', () => {

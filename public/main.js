@@ -1,16 +1,161 @@
 import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
-
 const socket = io();
 const WAIT_GAME = 1;
 const START_GAME = 2;
 const END_GAME = 3;
+const SOUND_BALL = 'public/localdata/sound/ball.mp3';
+const audioListenr = new THREE.AudioListener();
+const basicSound = new THREE.Audio(audioListenr);
+
+// 오디오 관리 클래스
+class AudioManager {
+    constructor(camera) {
+        this.camera = camera;
+        this.audioContext = null;
+        this.listener = null;
+        this.sounds = new Map(); // 여러 사운드 관리를 위한 Map
+        this.audioLoader = null;
+        this.initialized = false;
+        this.initializationPromise = null;
+    }
+
+    // 초기화
+    async init() {
+        if (this.initializationPromise) {
+            return this.initializationPromise;
+        }
+
+        this.initializationPromise = new Promise((resolve) => {
+            const handleInteraction = async () => {
+                if (this.initialized) return;
+
+                // AudioContext 초기화
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                this.audioContext = new AudioContext();
+
+                // Three.js 오디오 컴포넌트 초기화
+                this.listener = new THREE.AudioListener();
+                this.audioLoader = new THREE.AudioLoader();
+                this.camera.add(this.listener);
+
+                // suspended 상태인 경우 resume
+                if (this.audioContext.state === 'suspended') {
+                    await this.audioContext.resume();
+                }
+
+                this.initialized = true;
+
+                // 이벤트 리스너 제거
+                ['click', 'touchstart', 'keydown'].forEach(event => {
+                    document.removeEventListener(event, handleInteraction);
+                });
+
+                resolve();
+            };
+
+            // 사용자 상호작용 이벤트 리스너 추가
+            ['click', 'touchstart', 'keydown'].forEach(event => {
+                document.addEventListener(event, handleInteraction);
+            });
+        });
+
+        return this.initializationPromise;
+    }
+
+    // 새로운 사운드 로드
+    async loadSound(name, path, options = {}) {
+        if (!this.initialized) {
+            throw new Error('AudioManager not initialized. Call init() first.');
+        }
+
+        return new Promise((resolve, reject) => {
+            this.audioLoader.load(path, (buffer) => {
+                const sound = new THREE.Audio(this.listener);
+                sound.setBuffer(buffer);
+                
+                // 기본 옵션 설정
+                sound.setVolume(options.volume ?? 0.5);
+                sound.setLoop(options.loop ?? false);
+                
+                // Map에 사운드 저장
+                this.sounds.set(name, {
+                    sound,
+                    options: { ...options }
+                });
+                resolve(sound);
+            }, undefined, reject);
+        });
+    }
+
+    // 사운드 재생
+    play(name) {
+        const soundData = this.sounds.get(name);
+        if (!soundData) {
+            console.warn(`Sound "${name}" not found`);
+            return;
+        }
+
+        const { sound } = soundData;
+        if (!sound.isPlaying) {
+            sound.play();
+        }
+    }
+
+    // 사운드 정지
+    stop(name) {
+        const soundData = this.sounds.get(name);
+        if (!soundData) {
+            console.warn(`Sound "${name}" not found`);
+            return;
+        }
+
+        const { sound } = soundData;
+        if (sound.isPlaying) {
+            sound.stop();
+        }
+    }
+
+    // 볼륨 조절
+    setVolume(name, volume) {
+        const soundData = this.sounds.get(name);
+        if (!soundData) {
+            console.warn(`Sound "${name}" not found`);
+            return;
+        }
+
+        soundData.sound.setVolume(Math.max(0, Math.min(1, volume)));
+    }
+
+    // 모든 사운드 정지
+    stopAll() {
+        this.sounds.forEach(({ sound }) => {
+            if (sound.isPlaying) {
+                sound.stop();
+            }
+        });
+    }
+
+    // 리소스 정리
+    dispose() {
+        this.stopAll();
+        this.sounds.forEach(({ sound }) => {
+            sound.buffer = null;
+        });
+        this.sounds.clear();
+        if (this.camera && this.listener) {
+            this.camera.remove(this.listener);
+        }
+    }
+}
+
 
 class PingPongClient {
     constructor(remoteOption) {
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.audio = new AudioManager(this.camera);
         this.renderer = new THREE.WebGLRenderer();
         this.renderer.setSize(800, 800);
         this.remotePlay = remoteOption;
@@ -52,8 +197,46 @@ class PingPongClient {
         this.animate = this.animate.bind(this);
         this.animate();
         this.setupSocketListeners();
-    }
+        const initAudio = async () => {
+            // 사용자 상호작용을 기다림
+            const handleFirstInteraction = async () => {
+                try {
+                    await this.audio.init();
+                    await this.audio.loadSound('ball', 'public/localdata/sound/ball.mp3', {
+                        loop: false,
+                        volume: 0.9
+                    });
+                    console.log('Audio initialized successfully');
+                    
+                    // 이벤트 리스너 제거
+                    ['click', 'touchstart', 'keydown'].forEach(event => {
+                        document.removeEventListener(event, handleFirstInteraction);
+                    });
+                } catch (error) {
+                    console.error('Failed to initialize audio:', error);
+                }
+            };
 
+            // 사용자 상호작용 이벤트 리스너 추가
+            ['click', 'touchstart', 'keydown'].forEach(event => {
+                document.addEventListener(event, handleFirstInteraction);
+            });
+        };
+
+        initAudio();
+    }
+    soundPlayer(type){
+        console.log('aaa');
+        const soundLoader = new THREE.AudioLoader();
+        soundLoader.load(
+            type,function(buffer){
+                basicSound.setBuffer(buffer);
+                basicSound.setLoop(false);
+                basicSound.setVolume(0.5);
+                basicSound.play();
+            }
+        )
+    }
     makeWindow() {
         const newDiv = document.createElement('div');
         newDiv.classList.add("gameWindow");
@@ -63,7 +246,8 @@ class PingPongClient {
     makeFont(msg) {
         const loader = new FontLoader();
         loader.load(
-            'https://threejs.org/examples/fonts/helvetiker_regular.typeface.json',
+            '/localdata/helvetiker_regular.typeface.json',
+            // 'https://threejs.org/examples/fonts/helvetiker_regular.typeface.json',
             (font) => {
                 const textGeo = new TextGeometry(msg, {
                     font: font,
@@ -116,11 +300,13 @@ class PingPongClient {
     onKeyDown(event) {
         const key = event.key.toUpperCase();
         if (!this.secondPlayer && (key === 'A' || key === 'D')) {
-            socket.emit('keyPress', { key: key, pressed: true });
+            socket.emit('keyPress', { key: key, pressed: true ,who:this.secondPlayer});
         }
         else if(this.secondPlayer && (key === 'A' || key === 'D')) {
-            socket.emit('keyPress', { key: key === 'A' ? 'D':'A', pressed: true })
+            socket.emit('keyPress', { key: key === 'A' ? 'D':'A', pressed: true ,who:this.secondPlayer})
         }
+        else if(key === ' ')
+            socket.emit('keyPress', { key: ' ', pressed: true ,who:this.secondPlayer});
     }
 
     onKeyUp(event) {
@@ -230,6 +416,7 @@ class PingPongClient {
                 ballData.position.y,
                 ballData.position.z
             );
+            this.balls[index].material.color.setHex(this.initColor[gameState.balls[index].powerCounter]);
         });
     }
 
@@ -272,7 +459,6 @@ class PingPongClient {
 
     setupSocketListeners() {
         socket.on('data', (gameState) => {
-            console.log(gameState.type, gameState);
             
             if(gameState.type === 'gameState') {
                 this.updateGameState(gameState);
@@ -304,6 +490,11 @@ class PingPongClient {
             }
             else if(gameState.type === 'gameWait') {
                 this.gameStart = WAIT_GAME;
+            }
+            else if(gameState.type === 'sound'){
+                if(gameState.sound == 'ballToWall' && this.audio.sounds.has('ball')){
+                    this.audio.play('ball');
+                }
             }
         });
     }
