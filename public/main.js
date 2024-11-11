@@ -14,18 +14,18 @@ class ImpactEffect {
         this.scene = scene;
         this.impacts = [];
         this.settings = {
-            rings: 4,                // 동심원 갯수
+            rings: 5,                // 동심원 갯수
             particlesPerRing: 30,    // 각 링의 파티클 수
             startRadius: 2,          // 시작 반지름
-            maxRadius: 15,           // 최대 반지름
-            expandSpeed: 0.5,        // 확장 속도ddd
+            maxRadius: 5,           // 최대 반지름
+            expandSpeed: 0.5,        // 확장 속도
             duration: 100,          // 지속 시간 (ms)
             colors: [0xFD0140, 0xFF140, 0xFB9B2E, 0xF78180],
             particleSize: 0.5,       // 파티클 크기
             fadeSpeed: 0.02,         // 페이드아웃 속도
-            rotationSpeed: 0.02,     // 회전 속도
+            rotationSpeed: 1,     // 회전 속도
             verticalSpeed: 0.1,      // 수직 이동 속도
-            thickness: 0.5           // 각 링의 두께
+            thickness: 0.5           // 각 링의 두께a
         };
     }
 
@@ -182,7 +182,6 @@ class AudioManager {
 
                 resolve();
             };
-
             // 사용자 상호작용 이벤트 리스너 추가
             ['click', 'touchstart', 'keydown'].forEach(event => {
                 document.addEventListener(event, handleInteraction);
