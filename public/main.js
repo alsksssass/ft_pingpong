@@ -335,6 +335,10 @@ class PingPongClient {
                         loop: false,
                         volume: 0.9
                     });
+                    await this.audio.loadSound('bgm', 'https://raw.githubusercontent.com/alsksssass/ft_pingpong/master/public/localdata/sound/bgm.mp3', {
+                        loop: true,
+                        volume: 0.9
+                    });
                     console.log('Audio initialized successfully');
                     
                     // 이벤트 리스너 제거
@@ -353,9 +357,9 @@ class PingPongClient {
         };
 
         initAudio();
+        this.audio.play('bgm');
     }
     soundPlayer(type){
-        console.log('aaa');
         const soundLoader = new THREE.AudioLoader();
         soundLoader.load(
             type,function(buffer){
@@ -626,7 +630,6 @@ class PingPongClient {
                 }
             }
             else if(gameState.type === 'effect'){
-                console.log(gameState.op);
                 this.effect.createImpact(gameState.op);
             }
         });
