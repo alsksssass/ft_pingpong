@@ -8,7 +8,6 @@ const END_GAME = 3;
 const SOUND_BALL = 'public/localdata/sound/ball.mp3';
 const audioListenr = new THREE.AudioListener();
 const basicSound = new THREE.Audio(audioListenr);
-//폭발
 class ImpactEffect {
     constructor(scene) {
         this.scene = scene;
@@ -147,6 +146,7 @@ class AudioManager {
         this.audioLoader = null;
         this.initialized = false;
         this.initializationPromise = null;
+        this.isinit = false;
     }
 
     // 초기화
@@ -172,9 +172,16 @@ class AudioManager {
                 if (this.audioContext.state === 'suspended') {
                     await this.audioContext.resume();
                 }
-
                 this.initialized = true;
-
+                await this.loadSound('ball', 'https://raw.githubusercontent.com/alsksssass/ft_pingpong/master/public/localdata/sound/ball.mp3', {
+                    loop: false,
+                    volume: 0.9
+                });
+                await this.loadSound('bgm', 'https://raw.githubusercontent.com/alsksssass/ft_pingpong/master/public/localdata/sound/bgm.mp3', {
+                    loop: true,
+                    volume: 0.9
+                });
+                this.play('bgm');
                 // 이벤트 리스너 제거
                 ['click', 'touchstart', 'keydown'].forEach(event => {
                     document.removeEventListener(event, handleInteraction);
@@ -205,7 +212,7 @@ class AudioManager {
                 // 기본 옵션 설정
                 sound.setVolume(options.volume ?? 0.5);
                 sound.setLoop(options.loop ?? false);
-                
+                sound.autoplay = name === 'bgm' || false;
                 // Map에 사운드 저장
                 this.sounds.set(name, {
                     sound,
@@ -241,6 +248,7 @@ class AudioManager {
         const { sound } = soundData;
         if (sound.isPlaying) {
             sound.stop();
+            sound.disconnect();
         }
     }
 
@@ -256,24 +264,29 @@ class AudioManager {
     }
 
     // 모든 사운드 정지
-    stopAll() {
-        this.sounds.forEach(({ sound }) => {
-            if (sound.isPlaying) {
-                sound.stop();
-            }
-        });
-    }
-
-    // 리소스 정리
-    dispose() {
+    cleanup() {
         this.stopAll();
         this.sounds.forEach(({ sound }) => {
+            sound.disconnect();
             sound.buffer = null;
         });
         this.sounds.clear();
+        
         if (this.camera && this.listener) {
             this.camera.remove(this.listener);
         }
+
+        // AudioContext 종료
+        if (this.audioContext) {
+            this.audioContext.close();
+            this.audioContext = null;
+        }
+
+        this.initialized = false;
+    }
+
+    dispose() {
+        this.cleanup();
     }
 }
 
@@ -283,6 +296,8 @@ class PingPongClient {
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.audio = new AudioManager(this.camera);
+        //bgm play
+        this.audio.init();
         this.renderer = new THREE.WebGLRenderer();
         this.renderer.setSize(800, 800);
         this.remotePlay = remoteOption;
@@ -326,49 +341,6 @@ class PingPongClient {
         this.animate = this.animate.bind(this);
         this.animate();
         this.setupSocketListeners();
-        const initAudio = async () => {
-            // 사용자 상호작용을 기다림
-            const handleFirstInteraction = async () => {
-                try {
-                    await this.audio.init();
-                    await this.audio.loadSound('ball', 'https://raw.githubusercontent.com/alsksssass/ft_pingpong/master/public/localdata/sound/ball.mp3', {
-                        loop: false,
-                        volume: 0.9
-                    });
-                    await this.audio.loadSound('bgm', 'https://raw.githubusercontent.com/alsksssass/ft_pingpong/master/public/localdata/sound/bgm.mp3', {
-                        loop: true,
-                        volume: 0.9
-                    });
-                    console.log('Audio initialized successfully');
-                    
-                    // 이벤트 리스너 제거
-                    ['click', 'touchstart', 'keydown'].forEach(event => {
-                        document.removeEventListener(event, handleFirstInteraction);
-                    });
-                } catch (error) {
-                    console.error('Failed to initialize audio:', error);
-                }
-            };
-
-            // 사용자 상호작용 이벤트 리스너 추가
-            ['click', 'touchstart', 'keydown'].forEach(event => {
-                document.addEventListener(event, handleFirstInteraction);
-            });
-        };
-
-        initAudio();
-        this.audio.play('bgm');
-    }
-    soundPlayer(type){
-        const soundLoader = new THREE.AudioLoader();
-        soundLoader.load(
-            type,function(buffer){
-                basicSound.setBuffer(buffer);
-                basicSound.setLoop(false);
-                basicSound.setVolume(0.5);
-                basicSound.play();
-            }
-        )
     }
     makeWindow() {
         const newDiv = document.createElement('div');
@@ -415,10 +387,6 @@ class PingPongClient {
     setupLights() {
         const ambientLight = new THREE.AmbientLight(0xffffff, 1);
         this.scene.add(ambientLight);
-
-        const pointLight = new THREE.PointLight(0xffffff, 1, 1000);
-        pointLight.position.set(0, 100, 0);
-        this.scene.add(pointLight);
     }
 
     setupEventListeners() {
@@ -431,7 +399,8 @@ class PingPongClient {
     }
 
     onKeyDown(event) {
-        const key = event.key.toUpperCase();
+        let key = event.key.toUpperCase();
+        key = key === 'ARROWRIGHT' ? 'D' : (key === 'ARROWLEFT' ? 'A' : key);
         if (!this.secondPlayer && (key === 'A' || key === 'D')) {
             socket.emit('keyPress', { key: key, pressed: true ,who:this.secondPlayer});
         }
@@ -440,6 +409,16 @@ class PingPongClient {
         }
         else if(key === ' ')
             socket.emit('keyPress', { key: ' ', pressed: true ,who:this.secondPlayer});
+        else if(key === 'M'){
+            if(this.audio.sounds.get('bgm').sound);{
+                this.audio.sounds.get('bgm').sound.isPlaying ? this.audio.stop('bgm'): this.audio.play('bgm');
+            }
+        }
+        else if(key === 'C'){
+            const nowIndexColor = this.initColor.indexOf(this.playerOne.material.color.getHex());
+            this.playerOne.material.color.set(this.initColor[nowIndexColor >= this.initColor.length-1 ? 0 : nowIndexColor+1])
+        }
+            
     }
 
     onKeyUp(event) {
