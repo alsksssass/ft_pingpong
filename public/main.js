@@ -181,6 +181,14 @@ class AudioManager {
                     loop: true,
                     volume: 0.9
                 });
+                await this.loadSound('power_ball', 'https://raw.githubusercontent.com/alsksssass/ft_pingpong/master/public/localdata/sound/power_ball.mp3', {
+                    loop: false,
+                    volume: 0.9
+                });               
+                await this.loadSound('nomal_ball', 'https://raw.githubusercontent.com/alsksssass/ft_pingpong/master/public/localdata/sound/nomal_ball.mp3', {
+                    loop: false,
+                    volume: 0.9
+                });
                 this.play('bgm');
                 // 이벤트 리스너 제거
                 ['click', 'touchstart', 'keydown'].forEach(event => {
@@ -605,11 +613,12 @@ class PingPongClient {
             }
             else if(gameState.type === 'sound'){
                 if(gameState.sound == 'ballToWall' && this.audio.sounds.has('ball')){
-                    this.audio.play('ball');
+                    this.audio.play('nomal_ball');
                 }
             }
             else if(gameState.type === 'effect'){
                 this.effect.createImpact(gameState.op);
+                this.audio.play('power_ball');
             }
         });
     }

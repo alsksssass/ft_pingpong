@@ -89,7 +89,7 @@ class PingPongServer {
         this.isSinglePlayer = multiOption? true:{A:false,B:false};
         this.gameStart = false;
         this.clients = new Map();
-        this.resetAllBalls();
+        // this.resetAllBalls();
         setInterval(() => this.updatePhysics(), 1000 / 60);
         if(this.isSinglePlayer !== true)
             setInterval(() => this.updateAi(), 1000 / 10);
@@ -98,13 +98,16 @@ class PingPongServer {
     addBall() {
         const ball = new Ball(this.gameState.balls.length);
         this.gameState.balls.push(ball);
-        this.setBallVelocity(ball);
+        this.setBallVelocity(ball,1,true);
     }
 
-    setBallVelocity(ball,powerUp = 1) {
-        const maxAngle = Math.PI / 3;
+    setBallVelocity(ball,powerUp = 1,strat = false) {
+        const maxAngle = Math.PI / 6;
         const angle = (Math.random() * 2 - 1) * maxAngle;
-        const direction = ball.summunDirection ? 1 : -1;
+        let direction = ball.summunDirection ? 1 : -1;
+        if(strat){
+            direction = this.gameState.balls.length === 1 ? 1 : -1;
+        }
         powerUp = ball.powerCounter > 1 ? 1: powerUp;
         ball.powerCounter = powerUp === 2 ? 1 :0;
         const vx = Math.sin(angle) * CONSTANT_BALL_SPEED * powerUp;
@@ -162,7 +165,7 @@ class PingPongServer {
                     ball.summunDirection = true;
                 } else {
                     this.gameState.score.playerOne++;
-                    ball.summunDirection = true;
+                    ball.summunDirection = false;
                 }
 
                 if (this.gameState.score.playerOne > GAME_SET_SCORE || 
